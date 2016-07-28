@@ -100,10 +100,3 @@ object TTree {
   def apply(csvData : String) : TTree = ???
 }
 
-/**
-  * Taxonomy tag with translation locales
-  *
-  * @param name - Tag name
-  * @param locales - Sequence of locale values for Tag name
-  */
-case class TTag(name : String, locales: Seq[(String, String)])

@@ -9,10 +9,13 @@ Models
 v1 - TTree.scala
 An implementation in a single file
 
+v2 - Tree.scala, Taxonomy.scala, JsonFormatter.scala
+An implementation based on a mult-way tree trait
+
 Tests
 =====
 
 v1 - TTreeSpec
-
+v2 - TaxonomySpec
 
 
