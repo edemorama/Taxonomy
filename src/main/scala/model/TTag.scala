@@ -13,9 +13,21 @@ package model
 case class TTag(name : String, locales: Seq[(String, String)]) {
   /**
     * TODO Equality implementation
-    * @param that
+    * @param that - TTag instance to compare with this instance
     * @return
     */
   def equals(that: TTag) = ???
+}
+
+/**
+  * Companion object with simple Tag creation
+  */
+object TTag {
+  /**
+    * Create a Tag with the en locale based on the tName parameter
+    * @param tName - The en locale tag name
+    * @return
+    */
+  def simpleTag(tName: String) = TTag(tName, List(("en_GB", tName)))
 }
 

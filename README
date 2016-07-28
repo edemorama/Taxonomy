@@ -2,6 +2,7 @@ A taxonomy classification application
 ====================================
 
 The application implements a simple taxonomy classification system implemented as a multi-way tree
+The current version is an implementation with Akka actors.
 
 Models
 ======
@@ -10,12 +11,15 @@ v1 - TTree.scala
 An implementation in a single file
 
 v2 - Tree.scala, Taxonomy.scala, JsonFormatter.scala
-An implementation based on a mult-way tree trait
+An implementation based on a multi-way tree trait
+
+v3 - TaxonomyActor.scala, TaxonomyNode.scala, TTag.scala
+An implementation based on Akka actors
 
 Tests
 =====
 
 v1 - TTreeSpec
 v2 - TaxonomySpec
-
+v3 - TaxonomyActorSpec
 
