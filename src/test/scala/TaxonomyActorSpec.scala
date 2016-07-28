@@ -49,23 +49,23 @@ class TaxonomyActorSpec(_system: ActorSystem) extends TestKit(_system) with Flat
     root ! GetNodeId(requester=testActor, opId=1)
     expectMsgClass(100 millis, classOf[NodeId])
   }
-  "We" should "be able to retrieve the tNode of a childless root" in {
+  "We" should "be able to make a [Taxonomy] tree from a childless root" in {
 
-    root ! GetTNode(requester=testActor, opId=1)
-    val tNode = receiveOne(100 millis).asInstanceOf[Taxonomy]
-    println("tNode = "+tNode)
-    tNode.nodes should (be theSameInstanceAs Stream[Taxonomy]())
+    root ! MakeTree(requester=testActor, opId=1)
+    val taxonomy = receiveOne(100 millis).asInstanceOf[Taxonomy]
+    println("taxonomy = "+taxonomy)
+    taxonomy.nodes should (be theSameInstanceAs Stream[Taxonomy]())
   }
-  "We" should "be able to retrieve the tNode of root with child nodes" in {
+  "We" should "be able to make a [Taxonomy] tree from a root with child nodes" in {
 
     val nodes = List(system.actorOf(TaxonomyNode.props(TTag.simpleTag("Pop"))))
     root ! PrependNodes(requester=testActor, opId=1, nodes=nodes)
     expectMsg(OpSuccess(opId=1))
 
-    root ! GetTNode(requester=testActor, opId=2)
-    val tNode = receiveOne(100 millis).asInstanceOf[Taxonomy]
-    println("tNode = "+tNode)
-    tNode.nodes shouldNot (be theSameInstanceAs Stream[Taxonomy]())
+    root ! MakeTree(requester=testActor, opId=2)
+    val taxonomy = receiveOne(100 millis).asInstanceOf[Taxonomy]
+    println("taxonomy = "+taxonomy)
+    taxonomy.nodes shouldNot (be theSameInstanceAs Stream[Taxonomy]())
   }
   "We" should "be able to get the root node's id via Find By Id" in {
 
@@ -115,7 +115,7 @@ class TaxonomyActorSpec(_system: ActorSystem) extends TestKit(_system) with Flat
     expectMsg(OpSuccess(opId=2))
 
     root ! GetDescendants(requester=testActor, opId=3)
-    expectMsg(Descendants(opId=3, Stream[ActorRef](), List(popNode, showNode)))
+    expectMsg(Descendants(opId=3, List(showNode, popNode)))
   }
   "We" should "Retrieve all the multi-level descendants of a node" in {
 
@@ -130,7 +130,7 @@ class TaxonomyActorSpec(_system: ActorSystem) extends TestKit(_system) with Flat
     expectMsg(OpSuccess(opId=2))
 
     root ! GetDescendants(requester=testActor, opId=3)
-    expectMsg(Descendants(opId=3, Stream[ActorRef](), List(popNode, showNode)))
+    expectMsg(Descendants(opId=3, List(showNode, popNode)))
   }
   "We" should "Retrieve all the nodes with a particular tag" in {
 
@@ -148,11 +148,11 @@ class TaxonomyActorSpec(_system: ActorSystem) extends TestKit(_system) with Flat
     root ! PrependNodes(requester=testActor, opId=3, nodes=List(popNode1))
     expectMsg(OpSuccess(opId=3))
 
-    root ! GetDescendants(requester=testActor, opId=4, "Show")
-    expectMsg(Descendants(opId=4, Stream[ActorRef](), List(showNode), "Show"))
+    root ! GetDescendants(requester=testActor, opId=4, Some("Show"))
+    expectMsg(Descendants(opId=4, List(showNode), Some("Show")))
 
-    root ! GetDescendants(requester=testActor, opId=5, "Pop")
-    expectMsg(Descendants(opId=5, Stream[ActorRef](), List(popNode2, popNode1), "Pop"))
+    root ! GetDescendants(requester=testActor, opId=5,Some("Pop"))
+    expectMsg(Descendants(opId=5, List(popNode1, popNode2), Some("Pop")))
   }
   "We" can "serialise a taxonomy tree to CSV format" in {
 
@@ -167,7 +167,7 @@ class TaxonomyActorSpec(_system: ActorSystem) extends TestKit(_system) with Flat
 
     // serialise a node with no sub-nodes
     root ! Serialise(requester=testActor, opId=2)
-    expectMsg(Serialised(opId=2, nodes = Stream[ActorRef](), msg="{Categories,"+rootId+",en_GB,Categories}"))
+    expectMsg(Serialised(opId=2, msg="{Categories,"+rootId+",en_GB,Categories}"))
 
     showNode ! PrependNodes(requester=testActor, opId=3, nodes=List(popNode2))
     expectMsg(OpSuccess(opId=3))
@@ -177,7 +177,7 @@ class TaxonomyActorSpec(_system: ActorSystem) extends TestKit(_system) with Flat
 
     //serialise a node one nested sub-node
     root ! Serialise(requester=testActor, opId=5)
-    expectMsg(Serialised(opId=5, nodes = Stream[ActorRef](), msg="{Categories,"+rootId+",en_GB,Categories,{Show,"+showNodeId+
+    expectMsg(Serialised(opId=5, msg="{Categories,"+rootId+",en_GB,Categories,{Show,"+showNodeId+
       ",en_GB,Show,{Pop,"+popNodeId2+",en_GB,Pop}}}"))
 
     root ! PrependNodes(requester=testActor, opId=6, nodes=List(popNode1))
@@ -185,7 +185,7 @@ class TaxonomyActorSpec(_system: ActorSystem) extends TestKit(_system) with Flat
 
     // serialise a node with sub-node siblings
     root ! Serialise(requester=testActor, opId=7)  //
-    expectMsg(Serialised(opId=7, nodes = Stream[ActorRef](), msg="{Categories,"+rootId+",en_GB,Categories,{" +
+    expectMsg(Serialised(opId=7, msg="{Categories,"+rootId+",en_GB,Categories,{" +
       "Pop,"+popNodeId1+",en_GB,Pop},{Show,"+showNodeId+",en_GB,Show,{Pop,"+popNodeId2+",en_GB,Pop}}}"))
 
     root ! Serialise(requester=testActor, opId=8)

@@ -29,8 +29,8 @@ object TaxonomyActor {
   /*
     Root node values
    */
-  val RootTagName = "Categories"
-  val RootTag = TTag.simpleTag(RootTagName)
+  val (rootTagName, rootActorName) = ("Categories", "taxonomy_root")
+  val rootTag = TTag.simpleTag(rootTagName)
 
   import ReqType._
   /*
@@ -39,17 +39,15 @@ object TaxonomyActor {
   case class GetTagName(requester: ActorRef, opId: Int) extends Operation
   case class GetNodeId(requester: ActorRef, opId: Int) extends Operation
   case class GetNodes(requester: ActorRef, opId: Int) extends Operation
-  case class GetTNode(requester: ActorRef, opId: Int, reqType: ReqType = TELL) extends Operation
+  case class MakeTree(requester: ActorRef, opId: Int, reqType: ReqType = TELL) extends Operation
   case class UpdateTNode(requester: ActorRef, opId: Int) extends Operation
   case class PrependNodes(requester: ActorRef, opId: Int, nodes: List[ActorRef]) extends Operation
   case class FindNodeById(requester: ActorRef, opId: Int, id: UUID) extends Operation
   case class SearchNodesById(requester: ActorRef, opId: Int, sId: UUID, nodes: Stream[ActorRef]) extends Operation
   case class SearchNodesByTag(requester: ActorRef, opId: Int, tagName: String, nodes: Stream[ActorRef]) extends Operation
-  case class GetDescendants(requester: ActorRef, opId: Int, tagName: String = "") extends Operation
-  case class GetNodesDescendants(requester: ActorRef, opId: Int, tagName: String,
-                                 nodes: Stream[ActorRef], resultNodes: List[ActorRef]) extends Operation
-  case class Serialise(requester: ActorRef, opId: Int) extends Operation
-  case class SerialiseNodes(requester: ActorRef, opId: Int, nodes: Stream[ActorRef], msg: String) extends Operation
+  case class GetDescendants(requester: ActorRef, opId: Int, tagName: Option[String] = None,
+                            reqType: ReqType = TELL) extends Operation
+  case class Serialise(requester: ActorRef, opId: Int, reqType: ReqType = TELL) extends Operation
 
   /*
     Reply messages
@@ -62,8 +60,8 @@ object TaxonomyActor {
   case class NodeNotFoundById(opId: Int, sId: UUID, nodes: Stream[ActorRef]) extends OperationReply
   case class NodeFoundById(opId: Int, sId: UUID, n: ActorRef) extends OperationReply
   case class NodeNotFoundByTag(opId: Int, tNm: String, nodes: Stream[ActorRef]) extends OperationReply
-  case class Descendants(opId: Int, nodes: Stream[ActorRef], rnds: List[ActorRef], tNm: String = "") extends OperationReply
-  case class Serialised(opId: Int, nodes: Stream[ActorRef], msg: String) extends OperationReply
+  case class Descendants(opId: Int, rnds: List[ActorRef], tNm: Option[String] = None) extends OperationReply
+  case class Serialised(opId: Int, msg: String) extends OperationReply
 }
 
 /**
@@ -71,7 +69,9 @@ object TaxonomyActor {
   */
 class TaxonomyActor extends Actor with ActorLogging {
   import TaxonomyActor._
-  def createRoot : ActorRef = context.actorOf(TaxonomyNode.props(RootTag), name="taxonomy_root")
+
+  def createRoot : ActorRef = context.actorOf(TaxonomyNode.props(rootTag), name=rootActorName)
   var root = createRoot
+
   def receive: Receive = { case op: Operation => root ! op }
 }

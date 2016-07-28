@@ -2,14 +2,13 @@ package model
 
 import java.util.UUID
 
-import akka.actor.{ActorLogging, Actor, Props, ActorRef}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.event.LoggingReceive
-import akka.util.Timeout
 import akka.pattern.{ask, pipe}
-import scala.concurrent.duration._
-import scala.concurrent.Future
-import scala.util.Success
+import akka.util.Timeout
 
+import scala.concurrent.Future
+import scala.concurrent.duration._
 /**
   * Created by edem on 26/07/16.
   */
@@ -33,8 +32,6 @@ class TaxonomyNode(val data: TTag, var nodes : Stream[ActorRef] = Stream[ActorRe
                    val id: UUID = UUID.randomUUID() ) extends Actor with ActorLogging {
   import TaxonomyActor._
 
-  var tNode: Taxonomy = Taxonomy(data, Stream[Taxonomy](), id)
-
   import context.dispatcher
   implicit val timeout = Timeout(100 millis) // needed for `?` below
 
@@ -47,24 +44,24 @@ class TaxonomyNode(val data: TTag, var nodes : Stream[ActorRef] = Stream[ActorRe
     case GetNodeId(r, o) => r ! NodeId(o, id)
     case GetNodes(r, o) => r ! Nodes(o, nodes)
 
-    case GetTNode(r, o, t) if t == ReqType.TELL => getTNode(r, o)
-    case GetTNode(r, o, t) if t == ReqType.ASK => getTNode(sender(), o) //sender() needed here when replying to an ask
-
-    case UpdateTNode(r, o) => updateTNode
+    case MakeTree(r, o, t) if t == ReqType.TELL => makeTree(r, o)
+    case MakeTree(r, o, t) if t == ReqType.ASK => makeTree(sender(), o) //sender() needed here when replying to an ask
 
     case GetTagName(r, o) => r ! TagName(o, data.name)
 
     case PrependNodes(r, o, n) => prependNodes(r, o, n)
 
-    case FindNodeById(r, oId, sId) => searchNodesById(r, oId, sId, nodes)
-    case SearchNodesById(r, oId, sId, nds) => searchNodesById(r, oId, sId, nds)
+    case FindNodeById(r, o, sId) => searchNodesById(r, o, sId, nodes)
 
-    case GetDescendants(r, oId,tNm) => getDescendants(r, oId, tNm, nodes, List[ActorRef]())
-    case GetNodesDescendants(r, oId, tNm, nds, rnds) => getDescendants(r, oId, tNm, nds, rnds)
+    case SearchNodesById(r, o, sId, nds) => searchNodesById(r, o, sId, nds)
 
-    case Serialise(r, opId) =>  serialise(r, opId, nodes, "")
-    case SerialiseNodes(r, opId, nds, msg) => serialise(r, opId, nds, msg)
+    case GetDescendants(r, o, tNm, t)  if t == ReqType.TELL => findDescendants(r, o, tNm)
+    case GetDescendants(r, o, tNm, t)  if t == ReqType.ASK => findDescendants(sender(), o, tNm)
+
+    case Serialise(r, o, t) if t == ReqType.TELL  => serialise(r, o)
+    case Serialise(r, o, t) if t == ReqType.ASK  => serialise(sender(), o)
   }
+
   /**
     * Message processing state when processing the nodes
     *
@@ -72,7 +69,7 @@ class TaxonomyNode(val data: TTag, var nodes : Stream[ActorRef] = Stream[ActorRe
     * @return
     */
   def  processingNodes(requester: ActorRef): Receive = LoggingReceive {
-    case NodeNotFoundById(oId,sId, nds) =>
+    case NodeNotFoundById(oId, sId, nds) =>
       nds match {
         case n #:: ns => n ! SearchNodesById(self, oId, sId, ns)
         case _ =>
@@ -83,22 +80,8 @@ class TaxonomyNode(val data: TTag, var nodes : Stream[ActorRef] = Stream[ActorRe
     case NodeFoundById(oId,sId,n) =>
       context.become(receive)
       requester !  NodeFoundById(oId,sId,n)
-
-    case Descendants(oId, nds, rnds, tName) =>
-      nds match {
-        case n #:: ns => n ! GetNodesDescendants(self, oId, tName, ns, rnds)
-        case _ =>
-          context.become(receive)
-          requester ! Descendants(oId, nds, rnds, tName)
-      }
-    case Serialised(oId, nds, msg) =>
-      nds match {
-        case n #:: ns => n ! SerialiseNodes(self, oId, ns, msg)
-        case _ =>
-          context.become(receive)
-          requester ! Serialised(oId, nds, msg + "}")
-      }
   }
+
   /**
     * Find a node with a given id
     *
@@ -127,14 +110,17 @@ class TaxonomyNode(val data: TTag, var nodes : Stream[ActorRef] = Stream[ActorRe
     * @param tName - tag name to search for
     * @return
     */
-  def getDescendants(requester: ActorRef, opId: Int, tName: String, nds: Stream[ActorRef], rnds: List[ActorRef]) = {
-    val rNodes = if (data.name == tName || (tName == "" && data.name != RootTagName)) self :: rnds else rnds
-    nodes match {
-      case n #:: ns =>
-        context.become(processingNodes(requester))
-        n ! GetNodesDescendants(self, opId, tName, ns, rNodes)
-      case _ => requester ! Descendants(opId, nds, rNodes, tName)
-    }
+  def findDescendants(requester: ActorRef, opId: Int, tName: Option[String]) = {
+    Future.sequence(nodes.map(a => a ? GetDescendants(self, opId, tName, ReqType.ASK)).map(_.mapTo[Descendants])).map(ss => {
+      val ssNodes = ss.flatMap(_.rnds).toList
+      val rNodes = tName match {
+        case None if data.name != rootTagName =>  self :: ssNodes
+        case Some(tn) if data.name == tn =>  self :: ssNodes
+        case _ => ssNodes
+      }
+      //println("rNodes = "+rNodes2.mkString)
+      Descendants(opId, rNodes, tName)
+    }).pipeTo(requester)
   }
 
   /**
@@ -142,22 +128,17 @@ class TaxonomyNode(val data: TTag, var nodes : Stream[ActorRef] = Stream[ActorRe
     *
     * @param requester - Actor to send the processing results to
     * @param opId - Operation Id
-    * @param nds - Stream of nodes to serialise
-    * @param msg - serialised message in progress
     * @return
     */
-  def serialise(requester: ActorRef, opId: Int, nds: Stream[ActorRef], msg: String) = {
+  def serialise(requester: ActorRef, opId: Int) = {
     val sTag = data.name + "," + id + data.locales.map(tr => "," + tr._1 + "," + tr._2).mkString(",")
-    val rMsg = if (msg == "") "{" + sTag  else msg + ",{" + sTag
-
-    nodes match {
-      case n #:: ns =>
-        context.become(processingNodes(requester))
-        n ! SerialiseNodes(self, opId, ns, rMsg)
-      case _ =>
-        requester ! Serialised(opId, nds, rMsg + "}")
-    }
+    Future.sequence(nodes.map(a => a ? Serialise(self, opId, ReqType.ASK)).map(_.mapTo[Serialised])).map(ss => {
+      val msg = "{" + sTag + (if (ss.isEmpty) "}" else "," + ss.map(_.msg).mkString(",") + "}")
+      //println("serialse msg = "+msg)
+      Serialised(opId, msg)
+    }).pipeTo(requester)
   }
+
   /**
     * Add a node by prepending to the stream of sub-nodes
     *
@@ -171,28 +152,15 @@ class TaxonomyNode(val data: TTag, var nodes : Stream[ActorRef] = Stream[ActorRe
   }
 
   /**
-    * Set the taxonomy value on the tNode variable
-    * @return
-    */
-  def updateTNode = {
-    Future.sequence(nodes.map(a => a ? GetTNode(self, 0, ReqType.ASK)).map(_.mapTo[Taxonomy])).andThen({
-      case Success(nds) =>
-        tNode = tNode.prependNodes(nds.toList)
-        //println("tNode inside updateTNode = "+tNode)
-      case r@_ => println("Don't know why I am not in the Success "+r)
-    })
-  }
-  /**
-    * Get the tNode from this actor node, setting this value if it is empty
+    * Make a [Taxonomy] node from this actor node
     *
-    * @param requester - Actor to send the tNode to
+    * @param requester - Actor to send the [Taxonomy] node to
     * @param opId - Operation Id
     * @return
     */
-  def getTNode(requester: ActorRef, opId: Int) = {
-    println("(tNode.nodes.isEmpty && !nodes.isEmpty = "+(tNode.nodes.isEmpty && nodes.nonEmpty))
-    if (tNode.nodes.isEmpty && nodes.nonEmpty) {
-      updateTNode.map(nds => tNode).pipeTo(requester)
-    } else { requester ! tNode}
+  def makeTree(requester: ActorRef, opId: Int) = {
+    Future.sequence(nodes.map(a => a ? MakeTree(self, 0, ReqType.ASK)).map(_.mapTo[Taxonomy])).map(ss => {
+      Taxonomy(data, Stream[Taxonomy](), id).prependNodes(ss.toList)
+    }).pipeTo(requester)
   }
 }
