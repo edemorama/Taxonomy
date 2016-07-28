@@ -1,0 +1,18 @@
+A taxonomy classification application
+====================================
+
+The application implements a simple taxonomy classification system implemented as a multi-way tree
+
+Models
+======
+
+v1 - TTree.scala
+An implementation in a single file
+
+Tests
+=====
+
+v1 - TTreeSpec
+
+
+
